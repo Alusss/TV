@@ -102,8 +102,8 @@ jobs:
           chmod +x gradlew
           # Build only the custom modules TV project needs (standard ones come from Maven)
           ./gradlew \
-            :libraries:mpvplayer:assembleRelease \
-            :libraries:ui_danmaku:assembleRelease \
+            :lib-mpvplayer:assembleRelease \
+            :lib-ui-danmaku:assembleRelease \
             --no-daemon -x test -x lint 2>&1 | tail -30
 
           # Find and copy only the custom AARs
