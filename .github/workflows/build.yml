@@ -75,16 +75,16 @@ jobs:
         if: steps.check.outputs.changed == 'true'
         run: |
           cd source
-          # Fix version catalog: change androidx.media:media to media3-exoplayer
+          # Fix version catalog: change media version to media3-compatible version
+          sed -i 's|^media = ".*"|media = "1.5.1"|' gradle/libs.versions.toml
+          # Change library entry from androidx.media to media3-exoplayer
           sed -i 's|group = "androidx.media", name = "media"|group = "androidx.media3", name = "media3-exoplayer"|g' gradle/libs.versions.toml
-          # Add media3-session and media3-ui entries after the media line
-          sed -i '/^media = /a\media3-session = { group = "androidx.media3", name = "media3-session", version.ref = "media" }\nmedia3-ui = { group = "androidx.media3", name = "media3-ui", version.ref = "media" }' gradle/libs.versions.toml
-          # Add media3-session and media3-ui to app dependencies
-          sed -i '/implementation libs.media/a\    implementation libs.media3.session\n    implementation libs.media3.ui' app/build.gradle
+          # Replace libs.media with media3 deps in app/build.gradle
+          sed -i 's|implementation libs.media|implementation libs.media\n    implementation "androidx.media3:media3-session:1.5.1"\n    implementation "androidx.media3:media3-ui:1.5.1"|' app/build.gradle
           echo "--- Patched version catalog ---"
-          grep -A2 'media3' gradle/libs.versions.toml | head -10
+          grep 'media' gradle/libs.versions.toml | head -5
           echo "--- Patched app/build.gradle ---"
-          grep 'media3' app/build.gradle
+          grep -E 'media3|libs\.media' app/build.gradle
 
       - name: Create local.properties
         if: steps.check.outputs.changed == 'true'
