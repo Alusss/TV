@@ -100,12 +100,7 @@ jobs:
         run: |
           cd media
           chmod +x gradlew
-          ./gradlew publishToMavenLocal --no-daemon -x test -x lint \
-            -x :libraries:ui_compose:assembleRelease \
-            -x :libraries:ui_compose_material3:assembleRelease \
-            -x :libraries:transformer:assembleRelease \
-            -x :libraries:inspector:assembleRelease \
-            -x :libraries:inspector_frame:assembleRelease
+          ./gradlew publishToMavenLocal --no-daemon -x test -x lint
         env:
           JAVA_HOME: ${{ env.JAVA_HOME }}
 
