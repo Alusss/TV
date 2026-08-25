@@ -90,17 +90,28 @@ jobs:
         id: cache-media
         uses: actions/cache@v4
         with:
-          path: ~/.m2/repository/androidx/media3
+          path: /tmp/media3-aars
           key: media3-${{ env.MEDIA_BRANCH }}-${{ hashFiles('media/libraries/**/build.gradle*', 'media/gradle/libs.versions.toml') }}
           restore-keys: |
             media3-${{ env.MEDIA_BRANCH }}-
 
-      - name: Build media3 and publish to local Maven
+      - name: Build media3 and copy AARs
         if: steps.check.outputs.changed == 'true' && steps.cache-media.outputs.cache-hit != 'true'
         run: |
           cd media
           chmod +x gradlew
-          ./gradlew publishToMavenLocal --no-daemon -x test -x lint
+          # Build only the custom modules TV project needs (standard ones come from Maven)
+          ./gradlew \
+            :libraries:mpvplayer:assembleRelease \
+            :libraries:ui_danmaku:assembleRelease \
+            --no-daemon -x test -x lint 2>&1 | tail -30
+
+          # Find and copy only the custom AARs
+          mkdir -p /tmp/media3-aars
+          find libraries/mpvplayer -name '*.aar' -path '*/release/*' -exec cp {} /tmp/media3-aars/ \;
+          find libraries/ui_danmaku -name '*.aar' -path '*/release/*' -exec cp {} /tmp/media3-aars/ \;
+          echo "Built custom AARs:"
+          ls -la /tmp/media3-aars/
         env:
           JAVA_HOME: ${{ env.JAVA_HOME }}
 
@@ -109,17 +120,16 @@ jobs:
         run: |
           cd source
 
-          # Add mavenLocal() to dependency repositories
-          sed -i '/dependencyResolutionManagement/,/repositories {/{/repositories {/a\        mavenLocal()
-          }' settings.gradle
+          # Copy custom media3 AARs (mpvplayer, ui_danmaku) to app/libs
+          cp /tmp/media3-aars/*.aar app/libs/
+          echo "=== Custom AARs in app/libs ==="
+          ls app/libs/*.aar
 
-          # Replace libs.media with media3 deps (no version - resolved from composite build / mavenLocal)
-          sed -i 's|implementation libs.media|implementation libs.media\n    implementation "androidx.media3:media3-session"\n    implementation "androidx.media3:media3-ui"\n    implementation "androidx.media3:media3-mpvplayer"\n    implementation "androidx.media3:media3-ui-danmaku"|' app/build.gradle
-
-          echo "=== settings.gradle repositories ==="
-          grep -A8 'repositories {' settings.gradle
+          # Replace libs.media with standard media3 deps from Maven
+          # Custom ones (mpvplayer, ui_danmaku) come from the AAR files above
+          sed -i 's|implementation libs.media|implementation libs.media\n    implementation "androidx.media3:media3-exoplayer"\n    implementation "androidx.media3:media3-session"\n    implementation "androidx.media3:media3-ui"|' app/build.gradle
           echo "=== app/build.gradle media deps ==="
-          grep -E 'media3|libs\.media' app/build.gradle
+          grep -E 'media3|libs\.media|fileTree' app/build.gradle
 
       - name: Decode keystore
         if: steps.check.outputs.changed == 'true'
