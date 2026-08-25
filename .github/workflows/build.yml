@@ -108,8 +108,8 @@ jobs:
 
           # Find and copy only the custom AARs
           mkdir -p /tmp/media3-aars
-          find libraries/mpvplayer/build -name '*.aar' -exec cp {} /tmp/media3-aars/ \;
-          find libraries/ui_danmaku/build -name '*.aar' -exec cp {} /tmp/media3-aars/ \;
+          find libraries/mpvplayer/buildout -name '*.aar' -exec cp {} /tmp/media3-aars/ \;
+          find libraries/ui_danmaku/buildout -name '*.aar' -exec cp {} /tmp/media3-aars/ \;
           echo "Built custom AARs:"
           ls -la /tmp/media3-aars/
           echo "Built custom AARs:"
