@@ -155,16 +155,17 @@ jobs:
         if: steps.check.outputs.changed == 'true'
         run: |
           echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > source/app/release.jks
+          echo "Keystore size: $(wc -c < source/app/release.jks) bytes"
 
       - name: Create local.properties
         if: steps.check.outputs.changed == 'true'
         run: |
-          cat > source/local.properties << EOF
-          storeFile=release.jks
-          keyAlias=${{ secrets.KEY_ALIAS }}
-          storePassword=${{ secrets.STORE_PASSWORD }}
-          keyPassword=${{ secrets.KEY_PASSWORD }}
-          EOF
+          echo "storeFile=release.jks" > source/local.properties
+          echo "keyAlias=${{ secrets.KEY_ALIAS }}" >> source/local.properties
+          echo "storePassword=${{ secrets.STORE_PASSWORD }}" >> source/local.properties
+          echo "keyPassword=${{ secrets.KEY_PASSWORD }}" >> source/local.properties
+          echo "=== local.properties ==="
+          cat source/local.properties
 
       - name: Build release APKs
         if: steps.check.outputs.changed == 'true'
