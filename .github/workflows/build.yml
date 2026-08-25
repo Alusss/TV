@@ -2,7 +2,7 @@ name: Build & Release
 
 on:
   schedule:
-    - cron: '0 8 * * 1'  # 每周一 UTC 08:00
+    - cron: '0 8 * * 1'
   workflow_dispatch:
 
 permissions:
@@ -39,10 +39,8 @@ jobs:
           LAST_BODY=$(gh release view --repo "${{ github.repository }}" --json body -q '.body' 2>/dev/null || echo "")
           if echo "$LAST_BODY" | grep -q "${{ steps.upstream.outputs.sha }}"; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
-            echo "Upstream commit ${{ steps.upstream.outputs.sha }} already built, skipping."
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
-            echo "New upstream commit detected, will build."
           fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -76,53 +74,45 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: Patch TV project for composite build
+      - name: Cache media3 build
+        if: steps.check.outputs.changed == 'true'
+        id: cache-media
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository/androidx/media3
+          key: media3-${{ env.MEDIA_BRANCH }}-${{ hashFiles('media/libraries/**/build.gradle*', 'media/gradle/libs.versions.toml') }}
+          restore-keys: |
+            media3-${{ env.MEDIA_BRANCH }}-
+
+      - name: Build media3 and publish to local Maven
+        if: steps.check.outputs.changed == 'true' && steps.cache-media.outputs.cache-hit != 'true'
+        run: |
+          cd media
+          chmod +x gradlew
+          ./gradlew publishToMavenLocal --no-daemon -x test -x lint \
+            -x :libraries:ui_compose:assembleRelease \
+            -x :libraries:ui_compose_material3:assembleRelease \
+            -x :libraries:transformer:assembleRelease \
+            -x :libraries:inspector:assembleRelease \
+            -x :libraries:inspector_frame:assembleRelease
+        env:
+          JAVA_HOME: ${{ env.JAVA_HOME }}
+
+      - name: Patch TV project
         if: steps.check.outputs.changed == 'true'
         run: |
           cd source
 
-          # Rewrite settings.gradle with composite build support
-          cat > settings.gradle << 'SETTINGS'
-          pluginManagement {
-              includeBuild('../media/build-logic-settings')
-              repositories {
-                  gradlePluginPortal()
-                  mavenCentral()
-                  google()
-              }
-          }
+          # Add mavenLocal() to dependency repositories
+          sed -i '/dependencyResolutionManagement/,/repositories {/{/repositories {/a\        mavenLocal()
+          }' settings.gradle
 
-          plugins {
-              id "org.gradle.toolchains.foojay-resolver-convention" version "1.0.0"
-              id "gradlebuild.media3-settings-logic"
-          }
-
-          dependencyResolutionManagement {
-              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-              repositories {
-                  mavenLocal()
-                  mavenCentral()
-                  google()
-                  flatDir { dirs "$rootDir/app/libs" }
-                  maven { url = "https://jitpack.io" }
-              }
-          }
-
-          includeMedia3.execute(file('../media'))
-
-          include ':app'
-          include ':catvod'
-          include ':chaquo'
-          include ':quickjs'
-          rootProject.name = "TV"
-          SETTINGS
-
-          # Replace libs.media with media3 deps
+          # Replace libs.media with media3 deps (no version - resolved from composite build / mavenLocal)
           sed -i 's|implementation libs.media|implementation libs.media\n    implementation "androidx.media3:media3-session"\n    implementation "androidx.media3:media3-ui"\n    implementation "androidx.media3:media3-mpvplayer"\n    implementation "androidx.media3:media3-ui-danmaku"|' app/build.gradle
 
-          echo "=== Patched settings.gradle ==="
-          head -15 settings.gradle
-          echo "=== Patched app/build.gradle media deps ==="
+          echo "=== settings.gradle repositories ==="
+          grep -A8 'repositories {' settings.gradle
+          echo "=== app/build.gradle media deps ==="
           grep -E 'media3|libs\.media' app/build.gradle
 
       - name: Decode keystore
@@ -164,7 +154,6 @@ jobs:
           for apk in artifacts/*.apk; do
             APK_LIST="$APK_LIST $apk"
           done
-
           gh release create "$TAG" \
             --repo "${{ github.repository }}" \
             --title "FongMi TV $TAG" \
