@@ -100,17 +100,28 @@ jobs:
         run: |
           cd media
           chmod +x gradlew
-          # Build only the custom modules TV project needs (standard ones come from Maven)
+          # Build all modules TV project needs
           ./gradlew \
+            :lib-common:assembleRelease \
+            :lib-exoplayer:assembleRelease \
+            :lib-session:assembleRelease \
+            :lib-ui:assembleRelease \
             :lib-mpvplayer:assembleRelease \
             :lib-ui-danmaku:assembleRelease \
+            :lib-datasource:assembleRelease \
+            :lib-datasource-okhttp:assembleRelease \
+            :lib-datasource-rtmp:assembleRelease \
+            :lib-decoder:assembleRelease \
+            :lib-effect:assembleRelease \
+            :lib-extractor:assembleRelease \
+            :lib-container:assembleRelease \
+            :lib-database:assembleRelease \
             --no-daemon -x test -x lint 2>&1 | tail -30
 
-          # Find and copy only the custom AARs
+          # Find and copy ALL AARs
           mkdir -p /tmp/media3-aars
-          find libraries/mpvplayer/buildout -name '*.aar' -exec cp {} /tmp/media3-aars/ \;
-          find libraries/ui_danmaku/buildout -name '*.aar' -exec cp {} /tmp/media3-aars/ \;
-          echo "Built custom AARs:"
+          find libraries -path '*/buildout/outputs/aar/*.aar' -exec cp {} /tmp/media3-aars/ \;
+          echo "Built AARs:"
           ls -la /tmp/media3-aars/
           echo "Built custom AARs:"
           ls -la /tmp/media3-aars/
@@ -122,14 +133,13 @@ jobs:
         run: |
           cd source
 
-          # Copy custom media3 AARs (mpvplayer, ui_danmaku) to app/libs
+          # Copy ALL media3 AARs to app/libs (they use flatDir + fileTree)
           cp /tmp/media3-aars/*.aar app/libs/
-          echo "=== Custom AARs in app/libs ==="
+          echo "=== Media3 AARs in app/libs ==="
           ls app/libs/*.aar
 
-          # Replace libs.media with standard media3 deps from Maven
-          # Custom ones (mpvplayer, ui_danmaku) come from the AAR files above
-          sed -i 's|implementation libs.media|implementation libs.media\n    implementation "androidx.media3:media3-exoplayer"\n    implementation "androidx.media3:media3-session"\n    implementation "androidx.media3:media3-ui"|' app/build.gradle
+          # Remove libs.media (replaced by AARs from fileTree)
+          sed -i '/implementation libs.media/d' app/build.gradle
           echo "=== app/build.gradle media deps ==="
           grep -E 'media3|libs\.media|fileTree' app/build.gradle
 
