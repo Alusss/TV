@@ -1,0 +1,115 @@
+name: Build & Release
+
+on:
+  schedule:
+    - cron: '0 8 * * 1'  # 每周一 UTC 08:00
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  UPSTREAM_REPO: FongMi/TV
+  UPSTREAM_BRANCH: fongmi
+
+jobs:
+  check-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout self
+        uses: actions/checkout@v4
+
+      - name: Get upstream version
+        id: version
+        run: |
+          VERSION=$(curl -sL "https://raw.githubusercontent.com/${{ env.UPSTREAM_REPO }}/${{ env.UPSTREAM_BRANCH }}/app/build.gradle" \
+            | grep 'versionName' | sed 's/.*"\(.*\)".*/\1/')
+          if [ -z "$VERSION" ]; then
+            echo "::error::Failed to fetch upstream version"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Upstream version: $VERSION"
+
+      - name: Check if release exists
+        id: check
+        run: |
+          if gh release view "${{ steps.version.outputs.tag }}" --repo "${{ github.repository }}" > /dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Release ${{ steps.version.outputs.tag }} already exists, skipping."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "Release ${{ steps.version.outputs.tag }} not found, will build."
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Checkout upstream source
+        if: steps.check.outputs.exists == 'false'
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.UPSTREAM_REPO }}
+          ref: ${{ env.UPSTREAM_BRANCH }}
+          path: source
+
+      - name: Set up JDK 21
+        if: steps.check.outputs.exists == 'false'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Decode keystore
+        if: steps.check.outputs.exists == 'false'
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > source/app/release.jks
+
+      - name: Create local.properties
+        if: steps.check.outputs.exists == 'false'
+        run: |
+          cat > source/local.properties << EOF
+          storeFile=release.jks
+          keyAlias=${{ secrets.KEY_ALIAS }}
+          storePassword=${{ secrets.STORE_PASSWORD }}
+          keyPassword=${{ secrets.KEY_PASSWORD }}
+          EOF
+
+      - name: Build release APKs
+        if: steps.check.outputs.exists == 'false'
+        run: |
+          cd source
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon
+        env:
+          JAVA_HOME: ${{ env.JAVA_HOME }}
+
+      - name: Collect APKs
+        if: steps.check.outputs.exists == 'false'
+        id: collect
+        run: |
+          mkdir -p artifacts
+          find source/app/build/outputs/apk -name '*.apk' -type f -exec cp {} artifacts/ \;
+          ls -la artifacts/
+          echo "apk_count=$(ls artifacts/*.apk 2>/dev/null | wc -l)" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        if: steps.check.outputs.exists == 'false' && steps.collect.outputs.apk_count != '0'
+        run: |
+          APK_LIST=""
+          for apk in artifacts/*.apk; do
+            APK_LIST="$APK_LIST $apk"
+          done
+
+          gh release create "${{ steps.version.outputs.tag }}" \
+            --repo "${{ github.repository }}" \
+            --title "FongMi TV ${{ steps.version.outputs.tag }}" \
+            --notes "Auto-built from ${{ env.UPSTREAM_REPO }} branch ${{ env.UPSTREAM_BRANCH }} (commit $(git -C source rev-parse --short HEAD))" \
+            --latest \
+            $APK_LIST
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Cleanup keystore
+        if: always()
+        run: rm -f source/app/release.jks
