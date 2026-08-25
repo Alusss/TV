@@ -141,7 +141,7 @@ jobs:
           sed -i '/implementation libs.media/a\
           implementation libs.annotation\n\
           implementation libs.okhttp\n\
-          implementation libs.brotli.dec\n\
+          implementation libs.brotli\n\
           implementation libs.juniversalchardet\n\
           implementation libs.guava\n\
           implementation "androidx.collection:collection:1.5.0"\n\
