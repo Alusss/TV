@@ -19,34 +19,34 @@ jobs:
       - name: Checkout self
         uses: actions/checkout@v4
 
-      - name: Get upstream version
-        id: version
+      - name: Get upstream latest commit
+        id: upstream
         run: |
-          VERSION=$(curl -sL "https://raw.githubusercontent.com/${{ env.UPSTREAM_REPO }}/${{ env.UPSTREAM_BRANCH }}/app/build.gradle" \
-            | grep 'versionName' | sed 's/.*"\(.*\)".*/\1/')
-          if [ -z "$VERSION" ]; then
-            echo "::error::Failed to fetch upstream version"
+          SHA=$(curl -sL "https://api.github.com/repos/${{ env.UPSTREAM_REPO }}/commits/${{ env.UPSTREAM_BRANCH }}" \
+            | jq -r '.sha')
+          if [ -z "$SHA" ] || [ "$SHA" = "null" ]; then
+            echo "::error::Failed to fetch upstream commit"
             exit 1
           fi
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
-          echo "Upstream version: $VERSION"
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "Upstream latest commit: $SHA"
 
-      - name: Check if release exists
+      - name: Check if already built
         id: check
         run: |
-          if gh release view "${{ steps.version.outputs.tag }}" --repo "${{ github.repository }}" > /dev/null 2>&1; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-            echo "Release ${{ steps.version.outputs.tag }} already exists, skipping."
+          LAST_BODY=$(gh release view --repo "${{ github.repository }}" --json body -q '.body' 2>/dev/null || echo "")
+          if echo "$LAST_BODY" | grep -q "${{ steps.upstream.outputs.sha }}"; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Upstream commit ${{ steps.upstream.outputs.sha }} already built, skipping."
           else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
-            echo "Release ${{ steps.version.outputs.tag }} not found, will build."
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "New upstream commit detected, will build."
           fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Checkout upstream source
-        if: steps.check.outputs.exists == 'false'
+        if: steps.check.outputs.changed == 'true'
         uses: actions/checkout@v4
         with:
           repository: ${{ env.UPSTREAM_REPO }}
@@ -54,19 +54,19 @@ jobs:
           path: source
 
       - name: Set up JDK 21
-        if: steps.check.outputs.exists == 'false'
+        if: steps.check.outputs.changed == 'true'
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 21
 
       - name: Decode keystore
-        if: steps.check.outputs.exists == 'false'
+        if: steps.check.outputs.changed == 'true'
         run: |
           echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > source/app/release.jks
 
       - name: Create local.properties
-        if: steps.check.outputs.exists == 'false'
+        if: steps.check.outputs.changed == 'true'
         run: |
           cat > source/local.properties << EOF
           storeFile=release.jks
@@ -76,16 +76,14 @@ jobs:
           EOF
 
       - name: Build release APKs
-        if: steps.check.outputs.exists == 'false'
+        if: steps.check.outputs.changed == 'true'
         run: |
           cd source
           chmod +x gradlew
           ./gradlew assembleRelease --no-daemon
-        env:
-          JAVA_HOME: ${{ env.JAVA_HOME }}
 
       - name: Collect APKs
-        if: steps.check.outputs.exists == 'false'
+        if: steps.check.outputs.changed == 'true'
         id: collect
         run: |
           mkdir -p artifacts
@@ -94,17 +92,20 @@ jobs:
           echo "apk_count=$(ls artifacts/*.apk 2>/dev/null | wc -l)" >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release
-        if: steps.check.outputs.exists == 'false' && steps.collect.outputs.apk_count != '0'
+        if: steps.check.outputs.changed == 'true' && steps.collect.outputs.apk_count != '0'
         run: |
+          TAG=$(date -u +%Y%m%d)
           APK_LIST=""
           for apk in artifacts/*.apk; do
             APK_LIST="$APK_LIST $apk"
           done
 
-          gh release create "${{ steps.version.outputs.tag }}" \
+          gh release create "$TAG" \
             --repo "${{ github.repository }}" \
-            --title "FongMi TV ${{ steps.version.outputs.tag }}" \
-            --notes "Auto-built from ${{ env.UPSTREAM_REPO }} branch ${{ env.UPSTREAM_BRANCH }} (commit $(git -C source rev-parse --short HEAD))" \
+            --title "FongMi TV $TAG" \
+            --notes "Auto-built from ${{ env.UPSTREAM_REPO }} branch ${{ env.UPSTREAM_BRANCH }}
+
+          Commit: ${{ steps.upstream.outputs.sha }}" \
             --latest \
             $APK_LIST
         env:
