@@ -11,6 +11,8 @@ permissions:
 env:
   UPSTREAM_REPO: FongMi/TV
   UPSTREAM_BRANCH: fongmi
+  MEDIA_REPO: FongMi/media
+  MEDIA_BRANCH: release-1.11.0-fongmi
 
 jobs:
   check-and-build:
@@ -53,6 +55,14 @@ jobs:
           ref: ${{ env.UPSTREAM_BRANCH }}
           path: source
 
+      - name: Checkout FongMi/media
+        if: steps.check.outputs.changed == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.MEDIA_REPO }}
+          ref: ${{ env.MEDIA_BRANCH }}
+          path: media
+
       - name: Set up JDK 21
         if: steps.check.outputs.changed == 'true'
         uses: actions/setup-java@v4
@@ -66,25 +76,59 @@ jobs:
         with:
           python-version: '3.10'
 
+      - name: Patch TV project for composite build
+        if: steps.check.outputs.changed == 'true'
+        run: |
+          cd source
+
+          # Rewrite settings.gradle with composite build support
+          cat > settings.gradle << 'SETTINGS'
+          pluginManagement {
+              includeBuild('../media/build-logic-settings')
+              repositories {
+                  gradlePluginPortal()
+                  mavenCentral()
+                  google()
+              }
+          }
+
+          plugins {
+              id "org.gradle.toolchains.foojay-resolver-convention" version "1.0.0"
+              id "gradlebuild.media3-settings-logic"
+          }
+
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  mavenLocal()
+                  mavenCentral()
+                  google()
+                  flatDir { dirs "$rootDir/app/libs" }
+                  maven { url = "https://jitpack.io" }
+              }
+          }
+
+          includeMedia3.execute(file('../media'))
+
+          include ':app'
+          include ':catvod'
+          include ':chaquo'
+          include ':quickjs'
+          rootProject.name = "TV"
+          SETTINGS
+
+          # Replace libs.media with media3 deps
+          sed -i 's|implementation libs.media|implementation libs.media\n    implementation "androidx.media3:media3-session"\n    implementation "androidx.media3:media3-ui"\n    implementation "androidx.media3:media3-mpvplayer"\n    implementation "androidx.media3:media3-ui-danmaku"|' app/build.gradle
+
+          echo "=== Patched settings.gradle ==="
+          head -15 settings.gradle
+          echo "=== Patched app/build.gradle media deps ==="
+          grep -E 'media3|libs\.media' app/build.gradle
+
       - name: Decode keystore
         if: steps.check.outputs.changed == 'true'
         run: |
           echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > source/app/release.jks
-
-      - name: Patch media3 dependencies
-        if: steps.check.outputs.changed == 'true'
-        run: |
-          cd source
-          # Fix version catalog: change media version to media3-compatible version
-          sed -i 's|^media = ".*"|media = "1.5.1"|' gradle/libs.versions.toml
-          # Change library entry from androidx.media to media3-exoplayer
-          sed -i 's|group = "androidx.media", name = "media"|group = "androidx.media3", name = "media3-exoplayer"|g' gradle/libs.versions.toml
-          # Replace libs.media with media3 deps in app/build.gradle
-          sed -i 's|implementation libs.media|implementation libs.media\n    implementation "androidx.media3:media3-session:1.5.1"\n    implementation "androidx.media3:media3-ui:1.5.1"|' app/build.gradle
-          echo "--- Patched version catalog ---"
-          grep 'media' gradle/libs.versions.toml | head -5
-          echo "--- Patched app/build.gradle ---"
-          grep -E 'media3|libs\.media' app/build.gradle
 
       - name: Create local.properties
         if: steps.check.outputs.changed == 'true'
@@ -132,6 +176,6 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Cleanup keystore
+      - name: Cleanup
         if: always()
         run: rm -f source/app/release.jks
