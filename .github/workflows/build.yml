@@ -123,8 +123,6 @@ jobs:
           find libraries -path '*/buildout/outputs/aar/*.aar' -exec cp {} /tmp/media3-aars/ \;
           echo "Built AARs:"
           ls -la /tmp/media3-aars/
-          echo "Built custom AARs:"
-          ls -la /tmp/media3-aars/
         env:
           JAVA_HOME: ${{ env.JAVA_HOME }}
 
@@ -138,10 +136,20 @@ jobs:
           echo "=== Media3 AARs in app/libs ==="
           ls app/libs/*.aar
 
-          # Remove libs.media (replaced by AARs from fileTree)
-          sed -i '/implementation libs.media/d' app/build.gradle
-          echo "=== app/build.gradle media deps ==="
-          grep -E 'media3|libs\.media|fileTree' app/build.gradle
+          # Add missing transitive deps for media3 AARs (fileTree doesn't resolve transitives)
+          # These are needed by lib-session, lib-exoplayer, lib-ui-danmaku etc.
+          sed -i '/implementation libs.media/a\
+          implementation libs.annotation\n\
+          implementation libs.okhttp\n\
+          implementation libs.brotli.dec\n\
+          implementation libs.juniversalchardet\n\
+          implementation libs.guava\n\
+          implementation "androidx.collection:collection:1.5.0"\n\
+          implementation "androidx.concurrent:concurrent-futures:1.2.0"\n\
+          implementation "androidx.exifinterface:exifinterface:1.4.1"' app/build.gradle
+
+          echo "=== app/build.gradle deps ==="
+          grep -E 'media3|libs\.media|fileTree|guava|okhttp|brotli|juniversalchardet|annotation|collection|concurrent|exifinterface' app/build.gradle
 
       - name: Decode keystore
         if: steps.check.outputs.changed == 'true'
