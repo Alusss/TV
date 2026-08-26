@@ -5,6 +5,7 @@
 .settings
 *build
 *.jks
+!release.jks
 *.properties
 lib-*.aar
 /Release

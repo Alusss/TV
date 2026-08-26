@@ -184,7 +184,7 @@ jobs:
         run: |
           cd source
           chmod +x gradlew
-          ./gradlew assembleRelease --no-daemon
+          ./gradlew assembleRelease --no-daemon --stacktrace 2>&1 | tail -80
 
       - name: Collect APKs
         if: steps.check.outputs.changed == 'true'
