@@ -154,8 +154,8 @@ jobs:
       - name: Decode keystore
         if: steps.check.outputs.changed == 'true'
         run: |
-          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > source/app/release.jks
-          echo "Keystore size: $(wc -c < source/app/release.jks) bytes"
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > app/release.jks
+          echo "Keystore size: $(wc -c < app/release.jks) bytes"
 
       - name: Create local.properties
         if: steps.check.outputs.changed == 'true'
@@ -204,4 +204,4 @@ jobs:
 
       - name: Cleanup
         if: always()
-        run: rm -f source/app/release.jks
+        run: rm -f app/release.jks
