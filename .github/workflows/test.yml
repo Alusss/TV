@@ -1,5 +1,9 @@
 name: Test
 
+on:
+  push:                # 代码推送时触发
+  workflow_dispatch:   # 允许手动触发
+
 permissions:
   contents: write
 
