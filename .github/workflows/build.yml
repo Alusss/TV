@@ -3,7 +3,9 @@ name: Build & Release
 on:
   schedule:
     - cron: '0 8 * * 1'
-  workflow_dispatch:
+  push:                # 代码推送时触发
+  workflow_dispatch:   # 允许手动触发
+
 
 permissions:
   contents: write
@@ -154,13 +156,13 @@ jobs:
       - name: Decode keystore
         if: steps.check.outputs.changed == 'true'
         run: |
-          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > app/release.jks
-          echo "Keystore size: $(wc -c < app/release.jks) bytes"
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > source/app/release.jks
+          echo "Keystore size: $(wc -c < source/app/release.jks) bytes"
 
       - name: Create local.properties
         if: steps.check.outputs.changed == 'true'
         run: |
-          echo "storeFile=release.jks" > source/local.properties
+          echo "storeFile=source/app/release.jks" > source/local.properties
           echo "keyAlias=${{ secrets.KEY_ALIAS }}" >> source/local.properties
           echo "storePassword=${{ secrets.STORE_PASSWORD }}" >> source/local.properties
           echo "keyPassword=${{ secrets.KEY_PASSWORD }}" >> source/local.properties
@@ -204,4 +206,4 @@ jobs:
 
       - name: Cleanup
         if: always()
-        run: rm -f app/release.jks
+        run: rm -f source/app/release.jks
