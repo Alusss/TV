@@ -153,6 +153,11 @@ jobs:
           echo "=== app/build.gradle deps ==="
           grep -E 'media3|libs\.media|fileTree|guava|okhttp|brotli|juniversalchardet|annotation|collection|concurrent|exifinterface' app/build.gradle
 
+          # Increase JVM heap to avoid OOM during packaging
+          sed -i 's/-Xmx2048m/-Xmx4g/' gradle.properties
+          echo "=== gradle.properties ==="
+          cat gradle.properties
+
       - name: Decode keystore
         if: steps.check.outputs.changed == 'true'
         run: |
@@ -184,7 +189,9 @@ jobs:
         run: |
           cd source
           chmod +x gradlew
-          ./gradlew assembleRelease --no-daemon --stacktrace 2>&1 | tail -80
+          ./gradlew assembleRelease --no-daemon
+        env:
+          GRADLE_OPTS: "-Xmx4g -XX:+HeapDumpOnOutOfMemoryError"
 
       - name: Collect APKs
         if: steps.check.outputs.changed == 'true'
